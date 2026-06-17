@@ -1,10 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TIẾNG TRUNG MINH TÚ</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/hanzi-writer/3.5.2/hanzi-writer.min.js"></script>
+<title>TIẾNG TRUNG MINH TÚ 明秀汉语</title>
+<script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Inter:wght@300;400;500;600&family=Noto+Sans+SC:wght@300;400;500&display=swap');
 
@@ -271,7 +272,7 @@
 
 <header>
   <div class="logo">
-    <span class="logo-hanzi">TIẾNG TRUNG MINH TÚ</span>
+    <span class="logo-hanzi">漢字學</span>
     <span class="logo-vn">HSK 1</span>
   </div>
   <div class="header-right">
@@ -400,8 +401,7 @@
       <div id="stroke-word-chips" class="stroke-word-row"></div>
 
       <div class="stroke-canvas-wrap">
-        <div id="<div id="hanzi-writer-target"
-style="width:280px;height:280px;border:3px solid red;background:white">" style="width:280px;height:280px"></div>
+        <div id="hanzi-writer-target" style="width:280px;height:280px"></div>
         <div class="stroke-controls">
           <button class="btn btn-outline btn-sm" onclick="hwAnimate()">▶ Hoạt hình nét</button>
           <button class="btn btn-red btn-sm" onclick="hwQuiz()">✏️ Luyện viết</button>
@@ -811,17 +811,51 @@ function loadHanziChar(char, force=false) {
   char = (char || '').trim();
   if (!char) return;
   if (!force && char === currentHwChar) return;
-  if (!/[\u4e00-\u9fff\u3400-\u4dbf\u{20000}-\u{2a6df}]/u.test(char)) {
+  // Validate CJK Unicode block
+  if (!/[\u4e00-\u9fff\u3400-\u4dbf]/.test(char)) {
     document.getElementById('stroke-info').textContent = 'Vui lòng nhập ký tự Hán tự hợp lệ';
     return;
   }
   currentHwChar = char;
-  document.getElementById('stroke-info').textContent = `Đang tải: ${char} ...`;
-  const target = document.getElementById('hanzi-writer-target');
-  target.innerHTML = '';
+  document.getElementById('stroke-info').textContent = 'Đang tải dữ liệu nét...';
+
+  // Destroy previous instance cleanly
+  if (hw) {
+    try { hw.cancelQuiz(); } catch(e) {}
+    hw = null;
+  }
+
+  // Clear container and recreate SVG target to avoid DOM conflicts
+  const container = document.getElementById('hanzi-writer-target');
+  container.innerHTML = '';
+
+  // charDataLoader: fetch trực tiếp từ CDN chính thức của HanziWriter
+  // Đây là fix chính cho GitHub Pages — tránh dùng default loader bị chặn CORS
+  const CDN_BASE = 'https://cdn.jsdelivr.net/npm/hanzi-writer-data@2.0';
+  function charDataLoader(character, onLoad, onError) {
+    const codePoint = character.codePointAt(0).toString(16).toUpperCase().padStart(5, '0');
+    const url = CDN_BASE + '/' + character + '.json';
+    fetch(url)
+      .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      })
+      .then(function(data) { onLoad(data); })
+      .catch(function(err) {
+        // Fallback: thử với codepoint filename
+        const url2 = CDN_BASE + '/' + codePoint + '.json';
+        fetch(url2)
+          .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function(data) { onLoad(data); })
+          .catch(function() { onError(err); });
+      });
+  }
+
   try {
-    hw = HanziWriter.create('hanzi-writer-target', char, {
-      width: 280, height: 280, padding: 20,
+    hw = HanziWriter.create(container, char, {
+      width: 280,
+      height: 280,
+      padding: 20,
       showOutline: true,
       strokeColor: '#1a1a2e',
       outlineColor: '#d0cbbe',
@@ -830,16 +864,18 @@ function loadHanziChar(char, force=false) {
       drawingWidth: 5,
       strokeAnimationSpeed: 1,
       delayBetweenStrokes: 250,
-      onLoadCharDataSuccess: () => {
-        const strokes = hw._character ? (hw._character.strokes||[]).length : '?';
-        document.getElementById('stroke-info').textContent = `「${char}」— ${strokes} nét`;
+      charDataLoader: charDataLoader,
+      onLoadCharDataSuccess: function() {
+        document.getElementById('stroke-info').textContent = '「' + char + '」— Nhấn "Hoạt hình nét" để xem';
       },
-      onLoadCharDataError: () => {
-        document.getElementById('stroke-info').textContent = `⚠️ Không có dữ liệu nét cho「${char}」`;
+      onLoadCharDataError: function(reason) {
+        document.getElementById('stroke-info').textContent = '⚠️ Không tìm thấy dữ liệu nét cho「' + char + '」';
+        console.warn('HanziWriter load error:', reason);
       }
     });
   } catch(e) {
-    document.getElementById('stroke-info').textContent = 'Lỗi HanziWriter: ' + e.message;
+    document.getElementById('stroke-info').textContent = 'Lỗi khởi tạo: ' + e.message;
+    console.error('HanziWriter init error:', e);
   }
 }
 
